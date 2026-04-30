@@ -1,4 +1,5 @@
 import { debug } from '@actions/core';
+import { warning } from "@actions/core";
 import * as fmpe from '@errors/FactorioModPortalApiErrors';
 import { IModInfo } from '@interfaces/IFactorioModInfo';
 import axios, { AxiosError } from 'axios';
@@ -243,6 +244,7 @@ export default class FactorioModPortalApiService {
         if (!e.response.data) throw new fmpe.FactorioModPortalApiError('Unknown error', e.stack);
         const errorResponse = e.response.data as FactorioErrorResponse;
         if (!errorResponse.error) throw new fmpe.FactorioModPortalApiError('Missing error on body', e.stack);
+        if (errorResponse.message) warning("${errorResponse.message}");
         switch (errorResponse.error) {
             case 'InvalidApiKey':
                 throw new fmpe.FactorioModPortalApiInvalidApiTokenError(e.stack);
