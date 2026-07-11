@@ -30,9 +30,9 @@ export default class ActionHelper {
         version: string
     ): Promise<boolean> {
         try {
-            const latestVersion = await FactorioModPortalApiService.getLatestModVersion(name);
-            if (!latestVersion) return false
-            return semver.gt(version, latestVersion);
+            const existingVersion =
+                await FactorioModPortalApiService.checkModVersion(name, version);
+            return existingVersion == "";
         } catch (error) {
             if (error instanceof FactorioModPortalApiModNotFoundError) return false;
             throw error;
