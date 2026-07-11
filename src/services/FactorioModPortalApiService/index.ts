@@ -52,6 +52,24 @@ export default class FactorioModPortalApiService {
         }
     }
 
+    public static async checkModVersion(name: string, version: string): Promise<string | undefined> {
+        try {
+            const url = `${modApiUrl}/mods/${name}`;
+            const response = await axios.get<ModInfo>(url);
+            const modInfo = response.data;
+            if (!modInfo.releases) throw new fmpe.FactorioModPortalApiModNotFoundError();
+            const latestRelease = modInfo.releases.find((item) => item. version == version);
+            return latestRelease === undefined ? "" : latestRelease.version;
+        } catch (error) {
+            // If error is 404, the mod does not exist, check if error is axiosError
+            if (error instanceof AxiosError) {
+                if (error.response?.status === 404) throw new fmpe.FactorioModPortalApiModNotFoundError();
+            } else {
+                throw new Error(`Error fetching mod info: ${error}`);
+            }
+        }
+    }
+
     //#endregion
 
     //#region Public API
