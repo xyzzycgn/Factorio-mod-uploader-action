@@ -58,7 +58,7 @@ export class FactorioIgnoreParser {
     private sanitizePattern(pattern: string): string {
         return pattern.replace(FactorioIgnoreParser.INVALID_CHART_FOR_LINE, '') // Remove unsupported characters
             .replaceAll('\\', '/') // Replace backslashes with forward slashes
-            .toLocaleLowerCase(); // Convert to lowercase for case-insensitive matching
+            .toLowerCase(); // Convert to lowercase for case-insensitive matching
     }
     /**
      * Adds a single pattern to the list after converting it to a regex.
@@ -144,8 +144,7 @@ export class FactorioIgnoreParser {
         }
 
         let escapedPattern = pattern
-            .replace(/(?<!\.)\*/g, '.*') // Replace '*' with '.*'
-            .replace(/(?<!\\)\//g, String.raw`\/`); // Ensure directory separators are correct
+            .replace(/(?<!\.)\*/g, '.*'); // Replace '*' with '.*'
 
         // Handle directory-specific patterns (trailing slash)
         if (escapedPattern.endsWith('/')) {
@@ -178,8 +177,16 @@ export class FactorioIgnoreParser {
      */
     public shouldIgnore(filePath: string): boolean {
         let ignored = false;
-        // Convert the file path to a relative path from the current working directory
-        filePath = filePath.replace(process.cwd(), '').replace(/^[/\\]/, '');
+        // Convert absolute file path to relative from cwd, using startsWith for safety.
+        // Avoids using String.replace(process.cwd(), '') which:
+        // 1. Only replaces first occurrence
+        // 2. On Windows, cwd contains backslashes that could have special meaning
+        const cwd = process.cwd();
+        if (filePath.startsWith(cwd)) {
+            filePath = filePath.slice(cwd.length);
+        }
+        // Remove leading path separator and normalize to forward slashes
+        filePath = filePath.replace(/^[/\\]/, '').replace(/\\/g, '/');
 
         for (const { isNegated, regex } of this.patterns) {
             if (regex.test(filePath)) {

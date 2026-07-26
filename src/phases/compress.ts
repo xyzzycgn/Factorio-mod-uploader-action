@@ -26,7 +26,7 @@ export default class CompressProcess extends BaseProcess {
             this.debug(`No ${INPUT_DOTIGNORE_FILE} specified, using default ${FACTORIOIGNORE_FILE_NAME}`);
             this.dotignorefile = FACTORIOIGNORE_FILE_NAME;
         }
-        this.autoUpdateVersion = this.getInputBoolen(INPUT_AUTO_UPDATE_VERSION, false);
+        this.autoUpdateVersion = this.getInputBoolean(INPUT_AUTO_UPDATE_VERSION, false, false);
     }
     async run(): Promise<void> {
         let dotignoreContent = '';
@@ -88,7 +88,7 @@ export default class CompressProcess extends BaseProcess {
      */
     private extractVersionFromRef(githubRef: string): string | null {
         if (!githubRef) return null;
-        const tagMatch = new RegExp(/^refs\/tags\/(.+)$/).exec(githubRef);
+        const tagMatch = /^refs\/tags\/(.+)$/.exec(githubRef);
         if (!tagMatch) return null;
         let version = tagMatch[1];
         // Strip leading 'v' if present (e.g., 'v1.2.3' -> '1.2.3')

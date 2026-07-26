@@ -53,7 +53,11 @@ describe('FactorioModInfoParser', () => {
         });
 
         it('should throw error on invalid YAML', () => {
-            expect(() => new FactorioModInfoParser('invalid: yaml: content:')).toThrow();
+            expect(() => new FactorioModInfoParser('%%INVALID[YAML]::')).toThrow();
+        });
+
+        it('should throw error on YAML with syntax error', () => {
+            expect(() => new FactorioModInfoParser('key: [value] extra')).toThrow();
         });
     });
 
@@ -88,6 +92,24 @@ describe('FactorioModInfoParser', () => {
             expect(await parser.validate()).toBe(false);
         });
 
+        it('should fail on summary longer than 250 chars', async () => {
+            const yaml = `
+                mod_info:
+                    summary: "${'x'.repeat(251)}"
+            `;
+            const parser = new FactorioModInfoParser(yaml);
+            expect(await parser.validate()).toBe(false);
+        });
+
+        it('should fail on invalid title type', async () => {
+            const yaml = `
+                mod_info:
+                    title: true
+            `;
+            const parser = new FactorioModInfoParser(yaml);
+            expect(await parser.validate()).toBe(false);
+        });
+
         it('should fail on invalid title length', async () => {
             const yaml = `
                 mod_info:
@@ -110,6 +132,14 @@ describe('FactorioModInfoParser', () => {
             const parser = await FactorioModInfoParser.fromFile('/non/existent/path', '.');
             expect(parser).toBeInstanceOf(FactorioModInfoParser);
         });
+
+        it('should throw when file read fails', async () => {
+            const { existsSync } = require('node:fs');
+            (existsSync as jest.Mock).mockReturnValue(true);
+            mockReadFile.mockRejectedValue(new Error('Permission denied'));
+            await expect(FactorioModInfoParser.fromFile('/some/path', '.'))
+                .rejects.toThrow('Failed to read mod_info.yml');
+        });
     });
 
      describe('parsing', () => {
@@ -123,6 +153,19 @@ describe('FactorioModInfoParser', () => {
             const parser = new FactorioModInfoParser(yaml, tempDir);
             await parser.validate();
             expect(parser.getFullInfo().description).toBe('# Test Description');
+        });
+
+        it('should throw when description file cannot be read', async () => {
+            mockReadFile.mockRejectedValue(new Error('File not found'));
+            const yaml = `
+                mod_info:
+                    description_file: missing.md
+            `;
+
+            const parser = new FactorioModInfoParser(yaml, tempDir);
+            await expect(parser.validate()).rejects.toThrow(
+                'Failed to read description file'
+            );
         });
 
         it('should parse source link', async () => {
@@ -167,6 +210,51 @@ describe('FactorioModInfoParser', () => {
             await parser.validate();
             expect(parser.getFullInfo().tags).toEqual(["circuit-network", "logistic-network", "cheats" ]);
         });
+
+        it('should fail on invalid attach_source_link type', async () => {
+            const yaml = `
+                mod_info:
+                    attach_source_link: "not-a-boolean"
+            `;
+            const parser = new FactorioModInfoParser(yaml);
+            expect(await parser.validate()).toBe(false);
+        });
+
+        it('should fail on invalid license type', async () => {
+            const yaml = `
+                mod_info:
+                    license: 12345
+            `;
+            const parser = new FactorioModInfoParser(yaml);
+            expect(await parser.validate()).toBe(false);
+        });
+
+        it('should fail on invalid category type', async () => {
+            const yaml = `
+                mod_info:
+                    category: 12345
+            `;
+            const parser = new FactorioModInfoParser(yaml);
+            expect(await parser.validate()).toBe(false);
+        });
+
+        it('should fail on non-array tags', async () => {
+            const yaml = `
+                mod_info:
+                    tags: "not-an-array"
+            `;
+            const parser = new FactorioModInfoParser(yaml);
+            expect(await parser.validate()).toBe(false);
+        });
+
+        it('should fail on tags with non-string element', async () => {
+            const yaml = `
+                mod_info:
+                    tags: [12345]
+            `;
+            const parser = new FactorioModInfoParser(yaml);
+            expect(await parser.validate()).toBe(false);
+        });
     });
 
     describe('updateVersion', () => {
@@ -203,6 +291,15 @@ describe('FactorioModInfoParser', () => {
             await parser.saveToFile(filePath);
 
             expect(mockWriteFile).toHaveBeenCalledWith(filePath, expect.stringContaining('version'), 'utf-8');
+        });
+
+        it('should throw when write fails', async () => {
+            mockWriteFile.mockRejectedValue(new Error('Disk full'));
+
+            const parser = new FactorioModInfoParser('');
+            await expect(parser.saveToFile('/output/mod_info.yml')).rejects.toThrow(
+                'Failed to save mod_info.yml'
+            );
         });
     });
 });

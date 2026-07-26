@@ -1,5 +1,5 @@
 import * as core from '@actions/core';
-import { INPUT_MOD_FOLDER, INPUT_MOD_NAME, PROCESS_MOD_VERSION, PROCESS_ZIP_FILE } from '@constants';
+import { INPUT_DOTIGNORE_FILE, INPUT_MOD_FOLDER, INPUT_MOD_NAME, PROCESS_MOD_VERSION, PROCESS_ZIP_FILE } from '@constants';
 import CompressProcess from '@phases/compress';
 import { zipDirectory } from '@utils/zipper';
 import { rm } from 'node:fs/promises';
@@ -40,6 +40,23 @@ jest.mock('@services/FactorioIgnoreParser', () => ({
         getPatterns: mockGetPatterns,
         copyNonIgnoredFiles: jest.fn()
     }))
+}));
+
+const mockUpdateVersion = jest.fn();
+const mockSaveToFile = jest.fn();
+const mockValidate = jest.fn();
+const mockGetFullInfo = jest.fn();
+const mockParserInstance = {
+    updateVersion: mockUpdateVersion,
+    saveToFile: mockSaveToFile,
+    validate: mockValidate,
+    getFullInfo: mockGetFullInfo,
+};
+jest.mock('@services/FactorioModInfoParser', () => ({
+    FactorioModInfoParser: Object.assign(
+        jest.fn(() => mockParserInstance),
+        { fromFile: jest.fn(() => Promise.resolve(mockParserInstance)) }
+    ),
 }));
 
 describe('CompressProcess', () => {
@@ -94,6 +111,39 @@ describe('CompressProcess', () => {
         expect(core.exportVariable).toHaveBeenCalledWith(
             PROCESS_ZIP_FILE,
             '/tmp/test-mod_1.0.0.zip'
+        );
+    });
+
+    it('should skip deleting modDir when it does not exist', async () => {
+        jest.spyOn(compressProcess as any, 'getInput').mockImplementation(
+            (name: any) => {
+                switch (name) {
+                    case INPUT_MOD_NAME:
+                        return 'test-mod';
+                    case INPUT_MOD_FOLDER:
+                        return '/folder';
+                    case PROCESS_MOD_VERSION:
+                        return '1.0.0';
+                    default:
+                        return '';
+                }
+            }
+        );
+
+        // dotignore exists, modDir does not exist
+        mockExistsSync.mockReturnValueOnce(true).mockReturnValueOnce(false);
+        mockGetPatterns.mockReturnValue([]);
+        (zipDirectory as jest.Mock).mockResolvedValue('/tmp/test-mod_1.0.0.zip');
+        compressProcess.parseInputs();
+        const tmpPath = path.normalize('/tmp');
+        (compressProcess as any)['tmpPath'] = tmpPath;
+
+        await compressProcess.run();
+
+        // rm should be called only for cleaning up zipDir after zipping, not for modDir
+        expect(rm).toHaveBeenCalledWith(path.normalize('/tmp/zip'), { recursive: true });
+        expect(core.warning).not.toHaveBeenCalledWith(
+            expect.stringContaining('already exists')
         );
     });
 
@@ -165,6 +215,157 @@ describe('CompressProcess', () => {
             const helper = new CompressProcess();
             const version = (helper as any).extractVersionFromRef('');
             expect(version).toBeNull();
+        });
+    });
+
+    describe('run with autoUpdateVersion', () => {
+        beforeEach(() => {
+            jest.spyOn(compressProcess as any, 'getInput').mockImplementation(
+                (name: any) => {
+                    switch (name) {
+                        case INPUT_MOD_NAME:
+                            return 'test-mod';
+                        case INPUT_MOD_FOLDER:
+                            return '/folder';
+                        case PROCESS_MOD_VERSION:
+                            return '1.0.0';
+                        default:
+                            return '';
+                    }
+                }
+            );
+            mockExistsSync.mockReturnValue(true);
+            mockGetPatterns.mockReturnValue([]);
+            (zipDirectory as jest.Mock).mockResolvedValue('/tmp/test-mod_1.0.0.zip');
+            mockUpdateVersion.mockClear();
+            mockSaveToFile.mockClear();
+        });
+
+        it('should update version from GITHUB_REF with v prefix', async () => {
+            process.env.GITHUB_REF = 'refs/tags/v2.0.4';
+            jest.spyOn(compressProcess as any, 'getInputBoolean').mockReturnValue(true);
+            compressProcess.parseInputs();
+            const tmpPath = path.normalize('/tmp');
+            (compressProcess as any)['tmpPath'] = tmpPath;
+
+            await compressProcess.run();
+
+            expect(mockUpdateVersion).toHaveBeenCalledWith('2.0.4');
+            expect(mockSaveToFile).toHaveBeenCalled();
+            expect(core.info).toHaveBeenCalledWith(
+                'Auto-updating version to 2.0.4 (from GITHUB_REF: refs/tags/v2.0.4)'
+            );
+        });
+
+        it('should update version from GITHUB_REF without v prefix', async () => {
+            process.env.GITHUB_REF = 'refs/tags/2.0.4';
+            jest.spyOn(compressProcess as any, 'getInputBoolean').mockReturnValue(true);
+            compressProcess.parseInputs();
+            const tmpPath = path.normalize('/tmp');
+            (compressProcess as any)['tmpPath'] = tmpPath;
+
+            await compressProcess.run();
+
+            expect(mockUpdateVersion).toHaveBeenCalledWith('2.0.4');
+            expect(core.info).toHaveBeenCalledWith(
+                'Auto-updating version to 2.0.4 (from GITHUB_REF: refs/tags/2.0.4)'
+            );
+        });
+
+        it('should warn when GITHUB_REF is not a tag ref', async () => {
+            process.env.GITHUB_REF = 'refs/heads/main';
+            jest.spyOn(compressProcess as any, 'getInputBoolean').mockReturnValue(true);
+            compressProcess.parseInputs();
+            const tmpPath = path.normalize('/tmp');
+            (compressProcess as any)['tmpPath'] = tmpPath;
+
+            await compressProcess.run();
+
+            expect(mockUpdateVersion).not.toHaveBeenCalled();
+            expect(core.warning).toHaveBeenCalledWith(
+                expect.stringContaining('Could not extract version from GITHUB_REF')
+            );
+        });
+
+        it('should not auto-update when autoUpdateVersion is false', async () => {
+            process.env.GITHUB_REF = 'refs/tags/v2.0.4';
+            jest.spyOn(compressProcess as any, 'getInputBoolean').mockReturnValue(false);
+            compressProcess.parseInputs();
+            const tmpPath = path.normalize('/tmp');
+            (compressProcess as any)['tmpPath'] = tmpPath;
+
+            await compressProcess.run();
+
+            expect(mockUpdateVersion).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('dotignore edge cases', () => {
+        it('should warn when dotignore file does not exist', async () => {
+            jest.spyOn(compressProcess as any, 'getInput').mockImplementation(
+                (name: any) => {
+                    switch (name) {
+                        case INPUT_MOD_NAME:
+                            return 'test-mod';
+                        case INPUT_MOD_FOLDER:
+                            return '/folder';
+                        case PROCESS_MOD_VERSION:
+                            return '1.0.0';
+                        default:
+                            return '';
+                    }
+                }
+            );
+
+            // dotignorePath does not exist, modDir exists
+            mockExistsSync.mockReturnValueOnce(false).mockReturnValueOnce(true);
+            mockGetPatterns.mockReturnValue([]);
+            (zipDirectory as jest.Mock).mockResolvedValue('/tmp/test-mod_1.0.0.zip');
+            compressProcess.parseInputs();
+            const tmpPath = path.normalize('/tmp');
+            (compressProcess as any)['tmpPath'] = tmpPath;
+
+            await compressProcess.run();
+
+            expect(core.warning).toHaveBeenCalledWith(
+                expect.stringContaining('No .factorioignore found')
+            );
+            expect(core.warning).toHaveBeenCalledWith(
+                expect.stringContaining('Please create a')
+            );
+        });
+
+        it('should use provided dotignore file name', async () => {
+            jest.spyOn(compressProcess as any, 'getInput').mockImplementation(
+                (name: any) => {
+                    switch (name) {
+                        case INPUT_MOD_NAME:
+                            return 'test-mod';
+                        case INPUT_MOD_FOLDER:
+                            return '/folder';
+                        case PROCESS_MOD_VERSION:
+                            return '1.0.0';
+                        case INPUT_DOTIGNORE_FILE:
+                            return '.my-custom-ignore';
+                        default:
+                            return '';
+                    }
+                }
+            );
+
+            mockExistsSync.mockReturnValue(true);
+            mockGetPatterns.mockReturnValue([]);
+            (zipDirectory as jest.Mock).mockResolvedValue('/tmp/test-mod_1.0.0.zip');
+            compressProcess.parseInputs();
+            const tmpPath = path.normalize('/tmp');
+            (compressProcess as any)['tmpPath'] = tmpPath;
+
+            await compressProcess.run();
+
+            expect(compressProcess['dotignorefile']).toBe('.my-custom-ignore');
+            expect(core.debug).not.toHaveBeenCalledWith(
+                expect.stringContaining('No INPUT_DOTIGNORE_FILE specified')
+            );
         });
     });
 });

@@ -26,8 +26,9 @@ export const FactorioModCategory: FactorioModCategoryType[] = [
 ];
 
 export function ValidateFactorioCategory(category: string): FactorioModCategoryType | undefined {
-    if (FactorioModCategory.includes(category.toLocaleLowerCase() as FactorioModCategoryType)) {
-        return category as FactorioModCategoryType;
+    const categoryLower = category.toLowerCase();
+    if (FactorioModCategory.includes(categoryLower as FactorioModCategoryType)) {
+        return categoryLower as FactorioModCategoryType;
     }
     warning(`Invalid category: ${category} - skipping`);
     return undefined;
@@ -39,10 +40,10 @@ export function ValidateFactorioCategory(category: string): FactorioModCategoryT
 export type FactorioModTagType =
     | "transportation"
     | "logistics"
-    | "pipes"
     | "trains"
     | "combat"
     | "armor"
+    | "character"
     | "enemies"
     | "environment"
     | "mining"
@@ -50,6 +51,7 @@ export type FactorioModTagType =
     | "logistic-network"
     | "circuit-network"
     | "manufacturing"
+    | "planets"
     | "power"
     | "storage"
     | "blueprints"
@@ -58,10 +60,10 @@ export type FactorioModTagType =
 export const FactorioModTags: FactorioModTagType[] = [
     "transportation",
     "logistics",
-    "pipes",
     "trains",
     "combat",
     "armor",
+    "character",
     "enemies",
     "environment",
     "mining",
@@ -69,6 +71,7 @@ export const FactorioModTags: FactorioModTagType[] = [
     "logistic-network",
     "circuit-network",
     "manufacturing",
+    "planets",
     "power",
     "storage",
     "blueprints",
@@ -76,16 +79,17 @@ export const FactorioModTags: FactorioModTagType[] = [
 ];
 
 export function ValidateFactorioTag(tag: string): FactorioModTagType | void {
-    if (FactorioModTags.includes(tag.toLocaleLowerCase() as FactorioModTagType)) {
-        return tag as FactorioModTagType;
+    const tagLower = tag.toLowerCase();
+    if (FactorioModTags.includes(tagLower as FactorioModTagType)) {
+        return tagLower as FactorioModTagType;
     }
     warning(`Invalid tag: ${tag} - skipping`);
 }
 
 export function ValidateFactorioTags(tags?: string[]): FactorioModTagType[] {
     if (!tags) return [];
-    return tags.map((tags) => {
-        return ValidateFactorioTag(tags);
+    return tags.map((t) => {
+        return ValidateFactorioTag(t);
     }).filter((tag) => {
         return tag !== undefined;
     }) as FactorioModTagType[];
@@ -114,7 +118,7 @@ export const FactorioLicenses: FactorioModLicenseType[] = [
 
 export function ValidateFactorioLicense(license?: string): FactorioModLicenseType | undefined {
     if (!license) return undefined;
-    const licenseLower = license.toLocaleLowerCase();
+    const licenseLower = license.toLowerCase();
     if (licenseLower.startsWith("custom_")) return license as FactorioModLicenseType;
     switch (licenseLower) {
         case "mit":

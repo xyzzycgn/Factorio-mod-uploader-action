@@ -19,36 +19,25 @@ export default class FactorioModPortalApiService {
             return false;
         } catch (error) {
             if (error instanceof AxiosError) {
-                if (error.response?.status === 404 || error.code == '404') return false;
+                if (error.response?.status === 404) return false;
                 throw new fmpe.FactorioModPortalApiError('Unknown error', error.stack);
             }
             throw new Error(`Error fetching mod info: ${error}`);
         }
     }
 
-    public static async getLatestModVersion(name: string): Promise<string | undefined> {
+    public static async checkModVersionExists(name: string, version: string): Promise<boolean> {
         try {
             const url = `${modApiUrl}/mods/${name}`;
             const response = await axios.get<ModInfo>(url);
             const modInfo = response.data;
-            if (!modInfo.releases) throw new fmpe.FactorioModPortalApiModNotFoundError();
-            const latestRelease = modInfo.releases.reduce(
-                (latest, release) => {
-                    return new Date(release.released_at) >
-                        new Date(latest.released_at)
-                        ? release
-                        : latest;
-                },
-                modInfo.releases[0]
-            );
-            return latestRelease.version;
+            if (!modInfo.releases) return false;
+            return modInfo.releases.some(release => release.version === version);
         } catch (error) {
-            // If error is 404, the mod does not exist, check if error is axiosError
             if (error instanceof AxiosError) {
                 if (error.response?.status === 404) throw new fmpe.FactorioModPortalApiModNotFoundError();
-            } else {
-                throw new Error(`Error fetching mod info: ${error}`);
             }
+            throw new Error(`Error fetching mod info: ${error}`);
         }
     }
 
@@ -237,8 +226,11 @@ export default class FactorioModPortalApiService {
 
     static HandleFactorioModPortalApiError(e: AxiosError): void {
         debug(JSON.stringify(e.response?.data));
-        if (e.response === undefined) throw new fmpe.FactorioModPortalApiError('Unknown error', e.stack);
+        // Check connection-level errors FIRST, before accessing e.response
         if (e.code === 'ECONNREFUSED') throw new fmpe.FactorioModPortalApiError('Connection refused', e.stack);
+        if (e.code === 'ERR_NETWORK') throw new fmpe.FactorioModPortalApiError('Network error', e.stack);
+        if (e.code === 'ECONNABORTED') throw new fmpe.FactorioModPortalApiError('Connection aborted', e.stack);
+        if (e.response === undefined) throw new fmpe.FactorioModPortalApiError('Unknown error (no response)', e.stack);
         if (e.response.status === 500) throw new fmpe.FactorioModPortalApiInternalError(e.stack);
         if (!e.response.data) throw new fmpe.FactorioModPortalApiError('Unknown error', e.stack);
         const errorResponse = e.response.data as FactorioErrorResponse;
